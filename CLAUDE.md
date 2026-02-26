@@ -1,0 +1,73 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What This Is
+
+Automated scraper + classifier for Nellis Auction (nellisauction.com), Katy TX location. Scrapes ~22k auction items nightly, classifies them against a configurable interest list using a local LLM (Ollama), and generates an HTML report of matching items with links.
+
+## Architecture
+
+```
+main.py              # CLI entry point: --full, --update, --classify, --report
+├── scraper.py       # Playwright-based fetcher (browser context for bot evasion)
+├── db.py            # SQLite layer (auction.db)
+├── classifier.py    # Ollama batch classification against interests.txt
+├── report.py        # HTML report generator → reports/
+├── config.py        # All constants (URLs, delays, model, paths)
+└── interests.txt    # One interest per line (user-editable)
+```
+
+## Key Technical Details
+
+- **Nellis is a Remix app backed by Algolia.** The JSON data endpoint is:
+  `GET /search?Location+Name=Katy&sortBy=time_remaining_desc&_p1=s%3A120%2Cn%3A{PAGE}&_data=routes/search`
+- Pagination: `_p1=s:120,n:{page_num}` (0-indexed, 120 items/page)
+- Product links: `https://www.nellisauction.com/p/{slug}/{id}` (slug generated from first 12 words of title)
+- They use Kaptcha bot detection — scraper uses Playwright (real Chromium) and `page.evaluate(fetch(...))` from within the browser context
+- Product IDs are roughly auto-incrementing (currently in 89M-90M range)
+
+## Commands
+
+```bash
+source venv/bin/activate
+
+python main.py              # nightly pipeline: incremental scrape + classify + report
+python main.py --full       # initial full scrape (all ~185 pages, takes ~10min)
+python main.py --update     # incremental scrape only (stops at known items)
+python main.py --classify   # re-classify unclassified items via Ollama
+python main.py --report     # regenerate HTML report from DB
+
+# Individual modules work standalone too:
+python scraper.py --full
+python classifier.py
+python report.py
+```
+
+## Wrapper Scripts
+
+For convenience, use these executable scripts:
+
+```bash
+./run.sh           # incremental scrape + classify + report (default pipeline)
+./run-full.sh      # full scrape + classify + report
+./run-update.sh    # incremental scrape only (no classify/report)
+./run-classify.sh  # classify only (no scrape)
+./run-report.sh    # generate report only
+```
+
+The nightly cron job uses `run_nightly.sh` (logs to `logs/`).
+
+## Dependencies
+
+- Python 3.12, venv at `./venv`
+- `playwright` + `ollama` (see requirements.txt)
+- Playwright Chromium: `playwright install chromium`
+- Ollama must be running locally with a pulled model (default: `llama3.2:3b`)
+
+## Data Flow
+
+1. **Scrape** → Playwright fetches JSON pages → upserts into `auction.db`
+2. **Expire** → DELETEs items where `close_time < now`
+3. **Classify** → unclassified items sent to Ollama in batches of 20 → marks `is_interesting`
+4. **Report** → interesting + un-notified items → `reports/report-{date}.html`
