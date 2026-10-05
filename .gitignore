@@ -11,6 +11,9 @@ env/
 
 # Project runtime files
 auction.db
+woot.db
+.env
+.chrome-debug-profile/
 all_items.csv
 reports/
 logs/

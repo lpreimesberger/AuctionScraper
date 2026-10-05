@@ -55,3 +55,15 @@ def product_url(product_id: int, title: str) -> str:
     if not slug:
         slug = "product"
     return f"{BASE_URL}/p/{slug}/{product_id}"
+
+# Woot (separate pipeline: woot.py, woot_db.py, woot_classifier.py, woot_report.py)
+WOOT_FEED_URL = "https://developer.woot.com/feed/All"
+WOOT_DB_PATH = os.path.join(BASE_DIR, "woot.db")
+WOOT_INTERESTS_FILE = os.path.join(BASE_DIR, "woot_interests.txt")
+WOOT_STOCKUP_FILE = os.path.join(BASE_DIR, "woot_stockup.txt")
+WOOT_EXCLUDE_FILE = os.path.join(BASE_DIR, "woot_exclude.txt")
+# Woot list prices are inflated, so these are deliberately steep.
+WOOT_CRAZY_MIN_LIST = 40.0
+WOOT_CRAZY_MIN_DISCOUNT = 0.80
+WOOT_CRAZY_MAX_ITEMS = 40
+WOOT_STOCKUP_MIN_DISCOUNT = 0.40

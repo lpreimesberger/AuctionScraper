@@ -8,6 +8,7 @@ Usage:
     python main.py --update     # incremental scrape only
     python main.py --classify   # re-classify unclassified items
     python main.py --report     # generate report from existing data
+    python main.py --woot       # Woot only: fetch + classify + report
 """
 
 import argparse
@@ -16,18 +17,40 @@ import sys
 import db
 
 
+def run_woot():
+    """Separate Woot pipeline (own DB + report). Never raises, so it can't break the Nellis run."""
+    try:
+        import woot, woot_classifier, woot_db, woot_report
+        woot_db.init_db()
+        woot.scrape()
+        try:
+            woot_classifier.classify()
+        except Exception as e:
+            print(f"[main] Woot classifier error (is Ollama running?): {e}")
+        report_path = woot_report.generate_report()
+        if report_path:
+            print(f"\n  Open Woot report: file://{report_path}\n")
+    except Exception as e:
+        print(f"[main] Woot pipeline error: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Nellis Auction Scraper & Classifier")
     parser.add_argument("--full", action="store_true", help="Full scrape (all pages)")
     parser.add_argument("--update", action="store_true", help="Incremental scrape only")
     parser.add_argument("--classify", action="store_true", help="Classify items only")
     parser.add_argument("--report", action="store_true", help="Generate report only")
+    parser.add_argument("--woot", action="store_true", help="Woot pipeline only")
     args = parser.parse_args()
 
     db.init_db()
 
     # If no specific flags, run the full pipeline (incremental)
-    run_all = not any([args.full, args.update, args.classify, args.report])
+    run_all = not any([args.full, args.update, args.classify, args.report, args.woot])
+
+    if args.woot:
+        run_woot()
+        return
 
     # Always expire closed auctions first
     if run_all or args.full or args.update:
@@ -58,6 +81,9 @@ def main():
         report_path = generate_report()
         if report_path:
             print(f"\n  Open report: file://{report_path}\n")
+
+    if run_all:
+        run_woot()
 
 
 if __name__ == "__main__":

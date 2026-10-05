@@ -71,3 +71,13 @@ The nightly cron job uses `run_nightly.sh` (logs to `logs/`).
 2. **Expire** → DELETEs items where `close_time < now`
 3. **Classify** → unclassified items sent to Ollama in batches of 20 → marks `is_interesting`
 4. **Report** → interesting + un-notified items → `reports/report-{date}.html`
+
+## Woot Pipeline (separate from Nellis)
+
+`python main.py --woot` / `./run-woot.sh` runs it alone; the default `python main.py` (and so `run.sh` / `run_nightly.sh`) runs it after Nellis. A Woot failure never fails the Nellis run.
+
+- `woot.py` (fetch) → `woot_db.py` (`woot.db`) → `woot_classifier.py` → `woot_report.py` → `reports/woot-{date}.html`
+- API key: `WOOT_API_KEY` in `.env` (gitignored). `GET /feed/All` with no `page` returns the whole ~5k-offer catalog in one request (quota is 1000/day).
+- Config lists: `woot_interests.txt` (Ollama-verified), `woot_stockup.txt` (keyword + discount, no LLM), `woot_exclude.txt`. Thresholds are `WOOT_*` in `config.py`.
+- Woot list prices are heavily inflated (Invicta, Tucci watches...), so crazy deals are >=80% off list; junk brands go in `woot_exclude.txt`.
+- Tests: `python -m unittest tests.test_woot`
