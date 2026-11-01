@@ -1,6 +1,12 @@
 # AuctionScraper
 
-Automated scraper, classifier, and report generator for [Nellis Auction](https://nellisauction.com) — specifically the Katy, TX location. Scrapes ~22,000 live auction items nightly, classifies them against a configurable interest list using a local LLM (Ollama), and generates an HTML report of matching items with direct links.
+Automated deal finders that turn three sources into one daily set of HTML reports, so you stop digging through listings by hand:
+
+- **Nellis Auction** (Katy, TX location): scrapes ~22,000 live auction items nightly, classifies them against a configurable interest list using a local LLM (Ollama), and reports matches with direct links.
+- **Woot**: pulls the whole catalog from the official API and reports interests, stock-up deals and steep discounts.
+- **eBay watchlist**: searches the official Browse API for auctions ending soon on terms you choose (a game system, a printer brand, anything with no reliable price) and reports them grouped by term.
+
+Each source has its own database, config lists and report. A failure in one never stops the others.
 
 ## Features
 
@@ -15,8 +21,11 @@ Automated scraper, classifier, and report generator for [Nellis Auction](https:/
 ## Requirements
 
 - Python 3.12+
-- [Ollama](https://ollama.com) running locally with a pulled model
-- Playwright Chromium
+- Nellis: [Ollama](https://ollama.com) running locally with a pulled model, and Playwright Chromium
+- Woot: a free API key (see [Woot](#woot))
+- eBay: a developer account and production keys (see [eBay watchlist](#ebay-watchlist)). No Ollama needed.
+
+You only need to set up the sources you want. Woot and eBay are skipped cleanly if their keys are missing.
 
 ## Setup
 
@@ -90,7 +99,11 @@ python main.py --full       # full scrape of all pages (~185 pages, ~10 min firs
 python main.py --update     # incremental scrape only (no classify/report)
 python main.py --classify   # re-classify unclassified items only
 python main.py --report     # regenerate HTML report from existing data
+python main.py --woot       # Woot only: fetch + classify + report
+python main.py --ebay       # eBay watchlist only: fetch + report
 ```
+
+The default `python main.py` runs Nellis, then Woot, then eBay. Woot and eBay still run if Nellis fails.
 
 ### Convenience scripts
 
@@ -100,6 +113,8 @@ python main.py --report     # regenerate HTML report from existing data
 ./run-update.sh    # incremental scrape only
 ./run-classify.sh  # classify only
 ./run-report.sh    # generate report only
+./run-woot.sh      # Woot only
+./run-ebay.sh      # eBay watchlist only
 ```
 
 ### First run
@@ -111,6 +126,33 @@ python main.py --full
 ```
 
 Subsequent runs use incremental mode and stop as soon as they hit items already in the database.
+
+## Woot
+
+1. Get a free API key at [developer.woot.com](https://developer.woot.com) and put it in `.env` as `WOOT_API_KEY` (copy `.env.example`).
+2. Edit the lists:
+   - `woot_interests.txt`: keywords, verified by Ollama like Nellis
+   - `woot_stockup.txt`: everyday items, matched by keyword and a minimum discount (no LLM)
+   - `woot_exclude.txt`: junk brands to hide. Woot list prices are heavily inflated, so deliberately steep thresholds (`WOOT_*` in `config.py`) pick out the "crazy deals".
+3. `python main.py --woot` writes `reports/woot-YYYY-MM-DD.html`.
+
+The whole ~5,000-offer catalog comes back in one request, well within the 1,000/day quota.
+
+## eBay watchlist
+
+For things with no reliable price (collectible game books, a printer brand) where the pain is the searching. It lists auctions ending within a week, per term, soonest first. There is no price check and no LLM. We tried automatic deal-finding against comparable listings and it was mostly noise, since eBay is generally priced above retail.
+
+1. **Get production keys.** Create a developer account at [developer.eBay.com](https://developer.ebay.com) and generate a **Production** keyset (sandbox keys won't work: the sandbox only contains fake test listings).
+2. **Activate the keyset.** New production keysets are disabled until you deal with eBay's *Marketplace Account Deletion* requirement. In the developer portal, either subscribe an endpoint or request the exemption for apps that don't store eBay user data (that's this one: it stores item titles, prices and links, and never seller or buyer data). Until then every token request fails with `401 invalid_client`, even when the keys are correct. It can take a few minutes after you complete this.
+3. **Add the keys** to `.env` as `EBAY_PRO_APP_ID` and `EBAY_PRO_CERT_ID` (see `.env.example`).
+4. **Choose your searches** in `ebay_watch.txt`, one per line, and set `EBAY_ZIP` in `config.py` to your own zip code.
+5. `python main.py --ebay` writes `reports/ebay-YYYY-MM-DD.html`.
+
+A line is a plain search (`qidi`: every word must appear, any order, case ignored, no quotes) or a search limited to one category with `|`: `warhammer | books`. The category is a name from `EBAY_CATEGORIES` in `config.py` (just `books` so far; add more) or a raw numeric eBay category ID. Category searches catch listings that never use the obvious word (novels that don't say "book"), while plain searches catch things filed in the wrong category, so combining both works well.
+
+Use `ebay_exclude.txt` to hide noisy title words. Each listing appears in a report only once, so open it right after you run. Terms with a lot of auctions are capped at the 200 that end soonest (`EBAY_MAX_PER_QUERY`); the rest roll in on later runs. Also in `config.py`: `EBAY_WINDOW_HOURS` (look-ahead, default one week) and `EBAY_MAX_BID`.
+
+Notes if you hack on it: auctions come back from the Browse API with `currentBidPrice` and often no `price`; shipping can be missing for calculated-shipping listings. Review eBay's [API License Agreement](https://developer.ebay.com/join/api-license-agreement) before redistributing anything pulled from the API.
 
 ## Nightly Automation
 
@@ -134,6 +176,14 @@ config.py         # All constants (URLs, delays, model, paths)
 interests.txt     # Your interest categories (one per line)
 exclude.txt       # Terms to always exclude (one per line)
 run_nightly.sh    # Cron wrapper with logging
+
+woot.py, woot_db.py, woot_classifier.py, woot_report.py   # Woot pipeline (woot.db)
+woot_interests.txt, woot_stockup.txt, woot_exclude.txt    # Woot lists
+
+ebay.py, ebay_db.py, ebay_report.py                       # eBay watchlist (ebay.db)
+ebay_watch.txt, ebay_exclude.txt                          # eBay lists
+.env.example                                              # API key names for Woot and eBay
+tests/                                                    # python -m unittest discover tests
 ```
 
 ## How It Works
@@ -168,6 +218,10 @@ All tunable constants live in `config.py`:
 | `MIN_DELAY` / `MAX_DELAY` | `2.0` / `5.0` sec | Random delay between page fetches |
 | `CRAZY_DEAL_MIN_RETAIL` | `$75.00` | Minimum retail price for "crazy deal" flag |
 | `CRAZY_DEAL_MAX_RATIO` | `0.08` | Max bid/retail ratio to qualify as "crazy deal" |
+| `EBAY_ZIP` | `"77494"` | Your zip code (sets eBay shipping/location context) |
+| `EBAY_WINDOW_HOURS` | `168` | How far ahead to look for ending auctions |
+| `EBAY_MAX_BID` | `250.0` | Ignore auctions already bid above this |
+| `EBAY_MAX_PER_QUERY` | `200` | Soonest-ending results kept per watchlist term |
 
 ## License
 

@@ -9,28 +9,74 @@ import db
 
 
 def build_search_url(page_num: int) -> str:
-    """Build the Remix data endpoint URL for a given page number."""
+    """Build the Remix single fetch data endpoint URL for a given page number."""
     location = config.LOCATION
     sort = config.SORT
     size = config.ITEMS_PER_PAGE
     return (
-        f"{config.SEARCH_URL}?Location+Name={location}"
+        f"{config.BASE_URL}/search.data"
+        f"?Location+Name={location}"
         f"&sortBy={sort}"
         f"&_p1=s%3A{size}%2Cn%3A{page_num}"
-        f"&_data=routes/search"
+        f"&_routes=routes/search._index"
     )
 
 
+def decode_turbo_stream(raw_text: str) -> dict:
+    """Decode a Remix single-fetch turbo-stream JSON string into nested dicts/lists."""
+    data = json.loads(raw_text) if isinstance(raw_text, str) else raw_text
+    memo = {}
+
+    def decode_ref(idx):
+        if idx is None:
+            return None
+        if isinstance(idx, str):
+            return idx
+        if isinstance(idx, (int, float)):
+            if idx == -1 or idx == -5:
+                return None
+            if idx < 0:
+                return None
+            if idx in memo:
+                return memo[idx]
+            val = data[int(idx)]
+            memo[idx] = decode_node(val)
+            return memo[idx]
+        return decode_node(idx)
+
+    def decode_node(node):
+        if isinstance(node, dict):
+            res = {}
+            for k, v in node.items():
+                if k.startswith("_") and k[1:].isdigit():
+                    key_idx = int(k[1:])
+                    key_str = data[key_idx]
+                    res[key_str] = decode_ref(v)
+                else:
+                    res[k] = decode_node(v)
+            return res
+        elif isinstance(node, list):
+            if len(node) == 2 and node[0] == "D":
+                return node[1]
+            return [decode_ref(item) for item in node]
+        else:
+            return node
+
+    return decode_node(data[0])
+
+
 def fetch_page(playwright_page, page_num: int) -> dict:
-    """Fetch a single page of results via the Remix JSON data endpoint."""
+    """Fetch a single page of results via the Remix single fetch data endpoint."""
     url = build_search_url(page_num)
-    result = playwright_page.evaluate(f"""
+    raw_text = playwright_page.evaluate(f"""
         async () => {{
             const resp = await fetch("{url}");
-            return await resp.json();
+            return await resp.text();
         }}
     """)
-    return result
+    decoded = decode_turbo_stream(raw_text)
+    route_data = decoded.get("routes/search._index") or decoded.get("routes/search") or {}
+    return route_data.get("data", {})
 
 
 def random_delay():

@@ -67,3 +67,17 @@ WOOT_CRAZY_MIN_LIST = 40.0
 WOOT_CRAZY_MIN_DISCOUNT = 0.80
 WOOT_CRAZY_MAX_ITEMS = 40
 WOOT_STOCKUP_MIN_DISCOUNT = 0.40
+
+# eBay watchlist (separate pipeline: ebay.py, ebay_db.py, ebay_report.py). Production Browse API.
+# Terms in ebay_watch.txt are searched for auctions ending soon; no price check (see the file's header).
+EBAY_API_BASE = "https://api.ebay.com"
+EBAY_DB_PATH = os.path.join(BASE_DIR, "ebay.db")
+EBAY_WATCH_FILE = os.path.join(BASE_DIR, "ebay_watch.txt")
+EBAY_EXCLUDE_FILE = os.path.join(BASE_DIR, "ebay_exclude.txt")
+# Names usable after "|" in ebay_watch.txt; a raw numeric eBay category ID works too.
+EBAY_CATEGORIES = {"books": "267"}
+EBAY_ZIP = "77494"            # Katy; sets shipping/location context
+EBAY_WINDOW_HOURS = 168       # look a week ahead: rare terms (qidi) have few auctions
+EBAY_MAX_BID = 250.0          # current-bid cap
+EBAY_MAX_PER_QUERY = 200      # soonest-ending results kept per term; the rest roll in on later runs
+EBAY_REQUEST_DELAY = 0.3      # seconds between API calls (default quota is ~5k/day)

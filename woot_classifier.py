@@ -5,7 +5,7 @@ from collections import defaultdict
 
 import config
 import woot_db
-from classifier import INTEREST_KEYWORDS, is_excluded, verify_batch
+from classifier import INTEREST_KEYWORDS, is_excluded, verify_batch, fuzzy_match
 
 
 def _load_lines(path: str) -> list[str]:
@@ -38,7 +38,10 @@ def patterns_for(interest: str) -> list[str]:
 
 def matches_stockup(offer: dict, terms: list[str]) -> bool:
     text = _text(offer)
-    return any(re.search(r"\b" + re.escape(t) + r"s?\b", text, re.IGNORECASE) for t in terms)
+    for t in terms:
+        if re.search(r"\b" + re.escape(t) + r"s?\b", text, re.IGNORECASE) or fuzzy_match(t, text):
+            return True
+    return False
 
 
 def prescreen(offers: list[dict], interests: list[str]) -> dict[str, list[dict]]:
@@ -47,7 +50,7 @@ def prescreen(offers: list[dict], interests: list[str]) -> dict[str, list[dict]]
     for offer in offers:
         text = _text(offer)
         for interest, pats in compiled.items():
-            if any(p.search(text) for p in pats):
+            if any(p.search(text) for p in pats) or fuzzy_match(interest, text):
                 candidates[interest].append(offer)
     return dict(candidates)
 

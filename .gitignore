@@ -12,6 +12,7 @@ env/
 # Project runtime files
 auction.db
 woot.db
+ebay.db
 .env
 .chrome-debug-profile/
 all_items.csv

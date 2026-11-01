@@ -40,15 +40,26 @@ def init_db():
 
 def parse_product(product: dict) -> dict:
     """Flatten a Nellis product JSON object into a DB row dict."""
-    grade = product.get("grade") or {}
+    grade = product.get("grade") if isinstance(product.get("grade"), dict) else {}
 
     def grade_field(key):
         entry = grade.get(key)
-        return entry.get("description") if entry else None
+        return entry.get("description") if isinstance(entry, dict) else None
 
     photos = product.get("photos") or []
-    close_time_obj = product.get("closeTime") or {}
-    location = product.get("location") or {}
+    close_time_raw = product.get("closeTime")
+    if isinstance(close_time_raw, dict):
+        close_time = close_time_raw.get("value")
+    elif isinstance(close_time_raw, (int, float)):
+        ts = close_time_raw / 1000.0 if close_time_raw > 1e11 else float(close_time_raw)
+        close_time = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    elif isinstance(close_time_raw, str):
+        close_time = close_time_raw
+    else:
+        close_time = None
+
+    location = product.get("location")
+    location_name = location.get("name") if isinstance(location, dict) else (location if isinstance(location, str) else None)
 
     return {
         "id": product["id"],
@@ -60,9 +71,9 @@ def parse_product(product: dict) -> dict:
         "functional": grade_field("functionalType"),
         "damage": grade_field("damageType"),
         "rating": grade.get("rating"),
-        "close_time": close_time_obj.get("value"),
-        "photo_url": photos[0]["url"] if photos else None,
-        "location_name": location.get("name"),
+        "close_time": close_time,
+        "photo_url": photos[0]["url"] if photos and isinstance(photos[0], dict) else None,
+        "location_name": location_name,
     }
 
 

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import difflib
 from collections import defaultdict
 
 import ollama
@@ -109,19 +110,44 @@ Rules:
 - Match the CORE product purpose only"""
 
 
+def fuzzy_match(pattern: str, text: str, cutoff: float = 0.85) -> bool:
+    """Return True if any word/phrase in text fuzzily matches pattern."""
+    text_words = re.findall(r'[A-Za-z0-9]+', text.lower())
+    pattern_words = re.findall(r'[A-Za-z0-9]+', pattern.lower())
+    if not pattern_words:
+        return False
+    window_size = len(pattern_words)
+    p_str = " ".join(pattern_words)
+    for i in range(len(text_words) - window_size + 1):
+        t_str = " ".join(text_words[i:i+window_size])
+        if abs(len(p_str) - len(t_str)) <= 3:
+            if difflib.SequenceMatcher(None, p_str, t_str).ratio() >= cutoff:
+                return True
+    return False
+
+
 def keyword_prescreening(items: list[dict], interests: list[str]) -> dict[str, list[dict]]:
-    """Pre-screen items using keyword patterns. Returns {interest: [items]} candidates."""
+    """Pre-screen items using keyword patterns and fuzzy matching. Returns {interest: [items]} candidates."""
     candidates = defaultdict(list)
-    # Only check interests that have keyword patterns
-    active_interests = {i: INTEREST_KEYWORDS.get(i, []) for i in interests if i in INTEREST_KEYWORDS}
 
     for item in items:
         title = item["title"]
-        for interest, patterns in active_interests.items():
+        for interest in interests:
+            matched = False
+            # 1. Regex check if hardcoded patterns exist
+            patterns = INTEREST_KEYWORDS.get(interest, [])
             for pattern in patterns:
                 if re.search(pattern, title, re.IGNORECASE):
-                    candidates[interest].append(item)
-                    break  # Don't double-count same item for same interest
+                    matched = True
+                    break
+            
+            # 2. Fuzzy match against the interest phrase itself
+            if not matched:
+                if fuzzy_match(interest, title):
+                    matched = True
+                    
+            if matched:
+                candidates[interest].append(item)
 
     return dict(candidates)
 
